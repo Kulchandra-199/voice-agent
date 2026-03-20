@@ -48,7 +48,7 @@ function ChatInterface() {
           const headers: Record<string, string> = token ? { Authorization: `Bearer ${token}` } : {};
 
           try {
-            const res = await fetch('http://localhost:8080/auth/status', { headers });
+            const res = await fetch(`${process.env.NEXT_PUBLIC_BACKEND_URL}/auth/status`, { headers });
             const data = await res.json();
             if (data.connected || data.hasGoogleCalendar) {
               setCalendarConnected(true);
@@ -111,7 +111,7 @@ function ChatInterface() {
     try {
       const token = getAuthToken();
       const headers: Record<string, string> = token ? { Authorization: `Bearer ${token}` } : {};
-      const res = await fetch('http://localhost:8080/auth/google', { headers });
+      const res = await fetch(`${process.env.NEXT_PUBLIC_BACKEND_URL}/auth/google`, { headers });
       const data = await res.json();
       if (data.authUrl) {
         window.location.href = data.authUrl;
@@ -127,7 +127,7 @@ function ChatInterface() {
     try {
       const token = getAuthToken();
       const headers: Record<string, string> = token ? { Authorization: `Bearer ${token}` } : {};
-      await fetch('http://localhost:8080/auth/disconnect', { method: 'POST', headers });
+      await fetch(`${process.env.NEXT_PUBLIC_BACKEND_URL}/auth/disconnect`, { method: 'POST', headers });
     } catch (err) {
       console.error('Failed to disconnect calendar:', err);
     }
@@ -254,7 +254,7 @@ function ChatInterface() {
                   onClick={async () => {
                     const token = getAuthToken();
                     if (token) {
-                      await fetch('http://localhost:8080/auth/disconnect', {
+                      await fetch(`${process.env.NEXT_PUBLIC_BACKEND_URL}/auth/disconnect`, {
                         method: 'POST',
                         headers: { Authorization: `Bearer ${token}` },
                       });

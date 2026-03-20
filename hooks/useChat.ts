@@ -26,7 +26,7 @@ export function useChat({ onAssistantMessage, onToken }: UseChatOptions = {}) {
           content: msg.content,
         }));
 
-        const response = await fetch('http://localhost:8080/api/chat', {
+        const response = await fetch(`${process.env.NEXT_PUBLIC_BACKEND_URL}/api/chat`, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
