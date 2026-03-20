@@ -14,7 +14,7 @@ export function useVoice({ onTranscript }: UseVoiceOptions) {
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const chunksRef = useRef<Blob[]>([]);
 
-  const transcribeWithGroq = useCallback(async (audioBlob: Blob): Promise<string> => {
+  const transcribeWithGroq = useCallback(async (audioBlob: Blob, mimeType: string): Promise<string> => {
     console.log('[STT] Transcribing via backend proxy...');
 
     const base64 = await blobToBase64(audioBlob);
@@ -22,7 +22,7 @@ export function useVoice({ onTranscript }: UseVoiceOptions) {
     const res = await fetch(`${process.env.NEXT_PUBLIC_BACKEND_URL}/api/stt`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ audio: base64, language: 'en' }),
+      body: JSON.stringify({ audio: base64, language: 'en', mimeType }),
     });
 
     if (!res.ok) {
@@ -52,7 +52,15 @@ export function useVoice({ onTranscript }: UseVoiceOptions) {
     setStatus('Recording...');
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      const recorder = new MediaRecorder(stream, { mimeType: 'audio/webm' });
+      const mimeType = MediaRecorder.isTypeSupported('audio/webm;codecs=opus')
+        ? 'audio/webm;codecs=opus'
+        : MediaRecorder.isTypeSupported('audio/webm')
+        ? 'audio/webm'
+        : MediaRecorder.isTypeSupported('audio/mp4')
+        ? 'audio/mp4'
+        : 'audio/ogg';
+      console.log('[STT] Using mimeType:', mimeType);
+      const recorder = new MediaRecorder(stream, { mimeType });
       chunksRef.current = [];
 
       recorder.ondataavailable = (e) => {
@@ -64,9 +72,9 @@ export function useVoice({ onTranscript }: UseVoiceOptions) {
       recorder.onstop = async () => {
         console.log('[STT] Recording stopped, transcribing...');
         setStatus('Transcribing...');
-        const blob = new Blob(chunksRef.current, { type: 'audio/webm' });
+        const blob = new Blob(chunksRef.current, { type: mimeType });
         try {
-          const transcript = await transcribeWithGroq(blob);
+          const transcript = await transcribeWithGroq(blob, mimeType);
           if (transcript.trim()) {
             onTranscript(transcript);
           }

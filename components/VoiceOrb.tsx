@@ -7,7 +7,6 @@ interface VoiceOrbProps {
   isSpeaking: boolean;
   onStartListening: () => void;
   onStopListening: () => void;
-  disabled?: boolean;
 }
 
 export function VoiceOrb({
@@ -15,12 +14,10 @@ export function VoiceOrb({
   isSpeaking,
   onStartListening,
   onStopListening,
-  disabled = false,
 }: VoiceOrbProps) {
   const [isHovered, setIsHovered] = useState(false);
 
   const handleClick = () => {
-    if (disabled) return;
     if (isListening) {
       onStopListening();
     } else {
@@ -47,9 +44,8 @@ export function VoiceOrb({
       {(isSpeaking || isHovered) && <div className="glow-layer" />}
 
       <button
-        className={`voice-orb ${isListening ? 'listening' : ''} ${isSpeaking ? 'speaking' : ''} ${disabled ? 'disabled' : ''}`}
+        className={`voice-orb ${isListening ? 'listening' : ''} ${isSpeaking ? 'speaking' : ''}`}
         onClick={handleClick}
-        disabled={disabled}
         aria-label={isListening ? 'Stop recording' : 'Start recording'}
       >
         <svg
@@ -119,6 +115,10 @@ export function VoiceOrb({
         .voice-orb.disabled {
           opacity: 0.5;
           cursor: not-allowed;
+        }
+
+        .voice-orb:not(.disabled):active {
+          transform: scale(0.95);
         }
 
         .mic-icon {
