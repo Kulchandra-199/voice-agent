@@ -21,19 +21,25 @@ export function useTTS() {
 }
 
 const GROQ_TTS_VOICES = [
-  { name: 'sage', lang: 'en' },
-  { name: 'conductor', lang: 'en' },
-  { name: 'puck', lang: 'en' },
+  { name: 'autumn', lang: 'en' },
+  { name: 'diana', lang: 'en' },
+  { name: 'hannah', lang: 'en' },
+  { name: 'austin', lang: 'en' },
+  { name: 'daniel', lang: 'en' },
+  { name: 'troy', lang: 'en' },
 ];
 
 export function TTSProviderInner({ children }: { children: ReactNode }) {
   const [isSpeaking, setIsSpeaking] = useState(false);
-  const [currentVoiceName, setCurrentVoiceName] = useState<string>('sage');
+  const [currentVoiceName, setCurrentVoiceName] = useState<string>('autumn');
   const audioRef = useRef<HTMLAudioElement | null>(null);
 
   const setVoice = useCallback((voiceName: string) => {
-    setCurrentVoiceName(voiceName);
-    localStorage.setItem('selectedTTSVoice', voiceName);
+    const validVoices = GROQ_TTS_VOICES.map(v => v.name);
+    if (validVoices.includes(voiceName)) {
+      setCurrentVoiceName(voiceName);
+      localStorage.setItem('selectedTTSVoice', voiceName);
+    }
   }, []);
 
   const speak = useCallback(async (text: string) => {
