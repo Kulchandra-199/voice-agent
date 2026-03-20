@@ -1,4 +1,4 @@
-<<<<<<< HEAD
+
 readme
 =======
 # Voice Agent - Voice-Powered Scheduling Assistant
