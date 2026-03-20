@@ -40,12 +40,6 @@ export function TTSProviderInner({ children }: { children: ReactNode }) {
     if (!text.trim()) return;
     if (typeof window === 'undefined') return;
 
-    const apiKey = process.env.NEXT_PUBLIC_GROQ_API_KEY;
-    if (!apiKey) {
-      console.error('[TTS] No Groq API key configured');
-      return;
-    }
-
     // Stop any currently playing audio
     if (audioRef.current) {
       audioRef.current.pause();
@@ -54,17 +48,10 @@ export function TTSProviderInner({ children }: { children: ReactNode }) {
     setIsSpeaking(true);
 
     try {
-      const response = await fetch('https://api.groq.com/openai/v1/audio/speech', {
+      const response = await fetch(`${process.env.NEXT_PUBLIC_BACKEND_URL}/api/tts`, {
         method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${apiKey}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          model: 'canopylabs/orpheus-v1-english',
-          input: text,
-          voice: currentVoiceName,
-        }),
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ text, voice: currentVoiceName }),
       });
 
       if (!response.ok) {
