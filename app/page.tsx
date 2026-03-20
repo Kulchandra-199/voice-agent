@@ -2,12 +2,12 @@
 
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
+import { ChatMessage } from '@/types';
 import { VoiceOrb } from '@/components/VoiceOrb';
 import { ChatBubble } from '@/components/ChatBubble';
 import { TypingIndicator } from '@/components/TypingIndicator';
 import { useVoice } from '@/hooks/useVoice';
 import { useChat } from '@/hooks/useChat';
-import { useStreamingChat } from '@/hooks/useChat';
 import { useVAD } from '@/hooks/useVAD';
 import { TTSProviderInner, useTTS } from '@/components/TTSProviderInner';
 
@@ -33,16 +33,16 @@ function ChatInterface() {
   const [connectingCalendar, setConnectingCalendar] = useState(false);
   const [loading, setLoading] = useState(true);
   const [inputText, setInputText] = useState('');
-  const [streamingText, setStreamingText] = useState('');
   const [inputMode, setInputMode] = useState<'voice' | 'text'>('voice');
   const [showVoiceMenu, setShowVoiceMenu] = useState(false);
   const chatContainerRef = useRef<HTMLDivElement>(null);
   const router = useRouter();
 
-  // Refs for streaming pipeline
-  const tokenBufferRef = useRef<string[]>([]);
-  const speakStreamAbortRef = useRef<(() => void) | null>(null);
+  // Refs for chat pipeline
+  const messagesRef = useRef<ChatMessage[]>([]);
+  const setMessagesRef = useRef<((updater: React.SetStateAction<ChatMessage[]>) => void) | null>(null);
   const isVADRunningRef = useRef(false);
+  const speakRef = useRef<((text: string) => Promise<void>) | null>(null);
 
   useEffect(() => {
     const checkAuth = async () => {
@@ -88,7 +88,6 @@ function ChatInterface() {
 
   const handleNewChat = () => {
     clearMessages();
-    setStreamingText('');
     setShowChat(false);
   };
 
@@ -113,144 +112,46 @@ function ChatInterface() {
     }
   }, []);
 
-  const { isSpeaking, speak, speakStream, stopSpeaking, voices, selectedVoice, setVoice } = useTTS();
+  const { isSpeaking, speak, stopSpeaking, voices, selectedVoice, setVoice } = useTTS();
 
-  // ---- Stable refs for functions used in callbacks ----
-  const startListeningRef = useRef<(() => void) | null>(null);
+  // Stable ref for stopSpeaking used in VAD callback
   const stopSpeakingRef = useRef<(() => void) | null>(null);
-  const abortStreamRef = useRef<(() => void) | null>(null);
-  const speakStreamRef = useRef<((chunks: AsyncIterable<string>) => Promise<void>) | null>(null);
-
-  // Streaming TTS pipeline
-  const startSpeakStream = useCallback(() => {
-    console.log('[Page] startSpeakStream: called');
-    tokenBufferRef.current = [];
-    let done = false;
-
-    const textChunks: AsyncIterable<string> = {
-      async *[Symbol.asyncIterator]() {
-        console.log('[Page] startSpeakStream: iterator started');
-        let pollCount = 0;
-        while (!done) {
-          if (tokenBufferRef.current.length > 0) {
-            const chunk = tokenBufferRef.current.join('');
-            console.log('[Page] startSpeakStream: yielding from buffer, length:', chunk.length);
-            tokenBufferRef.current = [];
-            yield chunk;
-          } else {
-            pollCount++;
-            if (pollCount % 100 === 0) console.log('[Page] startSpeakStream: polling...', pollCount);
-            await new Promise<void>(r => {
-              const id = setInterval(() => {
-                if (done || tokenBufferRef.current.length > 0) {
-                  clearInterval(id);
-                  r();
-                }
-              }, 20);
-            });
-            if (done) break;
-            if (tokenBufferRef.current.length > 0) {
-              const chunk = tokenBufferRef.current.join('');
-              console.log('[Page] startSpeakStream: yielding after poll, length:', chunk.length);
-              tokenBufferRef.current = [];
-              yield chunk;
-            }
-          }
-        }
-        console.log('[Page] startSpeakStream: iterator done, remaining buffer:', tokenBufferRef.current.length);
-        if (tokenBufferRef.current.length > 0) {
-          yield tokenBufferRef.current.join('');
-          tokenBufferRef.current = [];
-        }
-        console.log('[Page] startSpeakStream: iterator exiting');
-      }
-    };
-
-    speakStreamAbortRef.current = () => { console.log('[Page] startSpeakStream: abort called'); done = true; };
-    console.log('[Page] startSpeakStream: calling speakStream with AsyncIterable...');
-    const promise = speakStreamRef.current?.(textChunks);
-    if (promise) {
-      promise.then(() => {
-        console.log('[Page] startSpeakStream: speakStream resolved successfully');
-      }).catch(err => {
-        console.error('[Page] startSpeakStream: speakStream rejected:', err);
-      });
-    } else {
-      console.error('[Page] startSpeakStream: speakStreamRef.current is null!');
-    }
-  }, []);
-
-  const appendToken = useCallback((token: string) => {
-    console.log('[Page] appendToken:', token.substring(0, 50));
-    setStreamingText(prev => prev + token);
-    tokenBufferRef.current.push(token);
-    const buffer = tokenBufferRef.current.join('');
-    console.log('[Page] appendToken: buffer length:', buffer.length, 'match flush?', /[.!?]\s*$/.test(buffer), buffer.split(/\s+/).length >= 15);
-    if (/[.!?]\s*$/.test(buffer) || buffer.split(/\s+/).length >= 15) {
-      console.log('[Page] appendToken: flushing buffer');
-      tokenBufferRef.current = [];
-    }
-  }, []);
-
-  // Streaming chat — declared before useVoice so abortStreamRef can be set
-  const { isStreaming, startStream, abort: abortStream } = useStreamingChat({
-    onToken: (token) => {
-      if (!showChat) setShowChat(true);
-      appendToken(token);
-    },
-    onComplete: (fullText) => {
-      setStreamingText(fullText);
-      tokenBufferRef.current = [];
-    },
-    onError: () => {
-      setStreamingText('');
-      tokenBufferRef.current = [];
-    },
-  });
-
-  // Update refs when these functions change
-  abortStreamRef.current = abortStream;
-  speakStreamRef.current = speakStream;
   stopSpeakingRef.current = stopSpeaking;
+  speakRef.current = speak;
 
-  // VAD: declared before useVoice so startListeningRef can be captured
+  // useChat — must be before handleTranscript and useVAD callbacks that use abort/sendMessage
+  const { messages, setMessages, isLoading, sendMessage, clearMessages, abort } = useChat({
+    onAssistantMessage: (reply) => {
+      if (reply?.trim()) {
+        speakRef.current?.(reply);
+      }
+    }
+  });
+  setMessagesRef.current = setMessages;
+
+  // VAD — uses abort() from useChat above
   const { isSpeechDetected, start: startVAD, stop: stopVAD } = useVAD({
     onSpeechStart: () => {
       if (!isSpeaking) return;
       console.log('[VAD] Speech detected — interrupting TTS');
       stopSpeakingRef.current?.();
-      abortStreamRef.current?.();
+      abort();
       stopVAD();
-      setStreamingText('');
     },
   });
 
-  // useVoice after VAD so startListeningRef is available to VAD callbacks
+  // useVoice — uses handleTranscript below, but start/stop are passed as callbacks
   const { isListening, isProcessing, status, error, startListening, stopListening, clearError } = useVoice({
     onTranscript: handleTranscript,
   });
-
-  startListeningRef.current = startListening;
 
   // What to do when user clicks orb while TTS is playing — stop TTS and start listening
   const handleOrbClickWhileSpeaking = useCallback(() => {
     console.log('[Orb] Clicked while speaking — interrupting and starting listening');
     stopSpeakingRef.current?.();
-    abortStreamRef.current?.();
-    setStreamingText('');
-    startListeningRef.current?.();
-  }, []);
-
-  // Start/stop VAD based on isSpeaking — guard prevents infinite cleanup loops
-  useEffect(() => {
-    if (isSpeaking && !isVADRunningRef.current) {
-      isVADRunningRef.current = true;
-      startVAD();
-    } else if (!isSpeaking && isVADRunningRef.current) {
-      isVADRunningRef.current = false;
-      stopVAD();
-    }
-  }, [isSpeaking, startVAD, stopVAD]);
+    abort();
+    startListening();
+  }, [abort]);
 
   // Orb click handler — decides based on current state
   const handleVoiceOrbClick = useCallback(() => {
@@ -266,20 +167,18 @@ function ChatInterface() {
   async function handleTranscript(text: string) {
     console.log('[Page] handleTranscript:', text);
     if (!showChat) setShowChat(true);
-    setStreamingText('');
-    abortStreamRef.current?.();
     stopSpeakingRef.current?.();
-    console.log('[Page] handleTranscript: calling startSpeakStream and startStream');
-    startSpeakStream();
+    abort();
+
     try {
-      await startStream(text, getAuthToken() || undefined);
-      console.log('[Page] handleTranscript: startStream completed');
+      await sendMessage(text, getAuthToken() || undefined);
     } catch (err) {
-      console.error('[Page] handleTranscript: startStream error:', err);
+      console.error('[Page] handleTranscript error:', err);
     }
   }
 
-  const { messages, isLoading, sendMessage, clearMessages } = useChat({});
+  // Keep refs up to date
+  stopSpeakingRef.current = stopSpeaking;
 
   useEffect(() => {
     if (chatContainerRef.current) {
