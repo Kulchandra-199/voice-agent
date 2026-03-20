@@ -1,13 +1,13 @@
 'use client';
 
-import { createContext, useContext, useState, useCallback, useEffect, useRef, ReactNode } from 'react';
+import { createContext, useContext, useState, useCallback, useRef, ReactNode } from 'react';
 
 interface TTSContextType {
   isSpeaking: boolean;
   speak: (text: string) => Promise<void>;
-  voices: SpeechSynthesisVoice[];
-  selectedVoice: SpeechSynthesisVoice | null;
-  setVoice: (voice: SpeechSynthesisVoice) => void;
+  voices: { name: string; lang: string }[];
+  selectedVoice: string;
+  setVoice: (voiceName: string) => void;
 }
 
 const TTSContext = createContext<TTSContextType | null>(null);
@@ -20,106 +20,91 @@ export function useTTS() {
   return context;
 }
 
+const GROQ_TTS_VOICES = [
+  { name: 'sage', lang: 'en' },
+  { name: 'conductor', lang: 'en' },
+  { name: 'puck', lang: 'en' },
+];
+
 export function TTSProviderInner({ children }: { children: ReactNode }) {
   const [isSpeaking, setIsSpeaking] = useState(false);
-  const [voices, setVoices] = useState<SpeechSynthesisVoice[]>([]);
-  const [currentVoiceName, setCurrentVoiceName] = useState<string>('');
-  const voicesRef = useRef<SpeechSynthesisVoice[]>([]);
-  const currentVoiceRef = useRef<SpeechSynthesisVoice | null>(null);
+  const [currentVoiceName, setCurrentVoiceName] = useState<string>('sage');
+  const audioRef = useRef<HTMLAudioElement | null>(null);
 
-  // Load voices and set from localStorage
-  useEffect(() => {
-    const loadVoices = () => {
-      const allVoices = speechSynthesis.getVoices();
-      if (allVoices.length === 0) return;
-
-      voicesRef.current = allVoices;
-      setVoices(allVoices);
-
-      // Get saved voice name from localStorage
-      const savedVoiceName = localStorage.getItem('selectedVoice');
-      let selectedVoice: SpeechSynthesisVoice | null = null;
-
-      if (savedVoiceName) {
-        selectedVoice = allVoices.find(v => v.name === savedVoiceName) || null;
-      }
-
-      // Only set default if no saved voice
-      if (!selectedVoice) {
-        selectedVoice = allVoices.find(
-          (v) => v.lang.startsWith('en') && v.name.includes('Female') && v.name.includes('Google')
-        ) || allVoices.find(
-          (v) => v.lang.startsWith('en') && v.name.includes('Female')
-        ) || allVoices.find((v) => v.lang.startsWith('en'))
-        || (allVoices.length > 0 ? allVoices[0] : null);
-      }
-
-      if (selectedVoice) {
-        currentVoiceRef.current = selectedVoice;
-        setCurrentVoiceName(selectedVoice.name);
-      }
-    };
-
-    loadVoices();
-
-    if (speechSynthesis.getVoices().length === 0) {
-      speechSynthesis.onvoiceschanged = loadVoices;
-    }
-
-    return () => {
-      speechSynthesis.onvoiceschanged = null;
-    };
-  }, []);
-
-  const setVoice = useCallback((voice: SpeechSynthesisVoice) => {
-    currentVoiceRef.current = voice;
-    setCurrentVoiceName(voice.name);
-    localStorage.setItem('selectedVoice', voice.name);
+  const setVoice = useCallback((voiceName: string) => {
+    setCurrentVoiceName(voiceName);
+    localStorage.setItem('selectedTTSVoice', voiceName);
   }, []);
 
   const speak = useCallback(async (text: string) => {
     if (!text.trim()) return;
     if (typeof window === 'undefined') return;
 
-    speechSynthesis.cancel();
+    const apiKey = process.env.NEXT_PUBLIC_GROQ_API_KEY;
+    if (!apiKey) {
+      console.error('[TTS] No Groq API key configured');
+      return;
+    }
 
-    // Get voice from ref to avoid stale closure issues
-    const voice = currentVoiceRef.current;
-    console.log('[TTS] Speaking with voice:', voice?.name);
+    // Stop any currently playing audio
+    if (audioRef.current) {
+      audioRef.current.pause();
+      audioRef.current = null;
+    }
+    setIsSpeaking(true);
 
-    return new Promise<void>((resolve) => {
-      const utterance = new SpeechSynthesisUtterance(text);
+    try {
+      const response = await fetch('https://api.groq.com/openai/v1/audio/speech', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${apiKey}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          model: 'canopylabs/orpheus-v1-english',
+          input: text,
+          voice: currentVoiceName,
+        }),
+      });
 
-      // Always set the voice explicitly
-      if (voice) {
-        utterance.voice = voice;
+      if (!response.ok) {
+        throw new Error(`TTS failed: ${response.status}`);
       }
 
-      utterance.rate = 1.15;
-      utterance.pitch = 1.0;
-      utterance.volume = 1.0;
+      const audioBlob = await response.blob();
+      const audioUrl = URL.createObjectURL(audioBlob);
+      const audio = new Audio(audioUrl);
 
-      utterance.onstart = () => {
-        setIsSpeaking(true);
-      };
-      utterance.onend = () => {
-        setIsSpeaking(false);
-        resolve();
-      };
-      utterance.onerror = (err) => {
-        console.error('[TTS] Error:', err);
-        setIsSpeaking(false);
-        resolve();
-      };
+      audioRef.current = audio;
 
-      speechSynthesis.speak(utterance);
-    });
-  }, []);
-
-  const selectedVoice = voices.find(v => v.name === currentVoiceName) || null;
+      await new Promise<void>((resolve, reject) => {
+        audio.onended = () => {
+          setIsSpeaking(false);
+          URL.revokeObjectURL(audioUrl);
+          resolve();
+        };
+        audio.onerror = () => {
+          setIsSpeaking(false);
+          reject(new Error('Audio playback failed'));
+        };
+        audio.play();
+      });
+    } catch (err) {
+      console.error('[TTS] Error:', err);
+      setIsSpeaking(false);
+    }
+  }, [currentVoiceName]);
 
   return (
-    <TTSContext.Provider value={{ isSpeaking, speak, voices, selectedVoice, setVoice }}>
+    <TTSContext.Provider
+      value={{
+        isSpeaking,
+        speak,
+        voices: GROQ_TTS_VOICES,
+        selectedVoice: currentVoiceName,
+        setVoice,
+      }}
+    >
       {children}
     </TTSContext.Provider>
   );
