@@ -1,5 +1,4 @@
 
-readme
 # Voice Agent - Voice-Powered Scheduling Assistant
 
 A voice-enabled AI assistant that interacts with users via speech and manages their Google Calendar. Built with Next.js, it connects to a backend scheduler service for calendar operations and LLM-powered conversations.
