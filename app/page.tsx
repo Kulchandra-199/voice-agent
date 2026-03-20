@@ -221,7 +221,7 @@ function ChatInterface() {
                 <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/>
                 <path d="M19 10v2a7 7 0 0 1-14 0v-2"/>
               </svg>
-              <span>{selectedVoice?.name || 'Select Voice'}</span>
+              <span>{selectedVoice || 'Select Voice'}</span>
               <svg className="chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                 <polyline points="6 9 12 15 18 9"/>
               </svg>
@@ -232,9 +232,9 @@ function ChatInterface() {
                 {voices.map((v) => (
                   <button
                     key={v.name}
-                    className={`voice-option ${selectedVoice?.name === v.name ? 'active' : ''}`}
+                    className={`voice-option ${selectedVoice === v.name ? 'active' : ''}`}
                     onClick={() => {
-                      setVoice(v);
+                      setVoice(v.name);
                       setShowVoiceMenu(false);
                     }}
                   >
