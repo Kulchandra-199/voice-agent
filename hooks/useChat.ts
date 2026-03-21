@@ -37,6 +37,8 @@ export function useChat({ onAssistantMessage }: UseChatOptions = {}) {
       }));
 
       const startNew = startNewConversationNextRef.current;
+      const clientTimeZone =
+        typeof Intl !== 'undefined' ? Intl.DateTimeFormat().resolvedOptions().timeZone : undefined;
       const response = await fetch(`${process.env.NEXT_PUBLIC_BACKEND_URL}/api/chat`, {
         method: 'POST',
         headers: {
@@ -45,6 +47,7 @@ export function useChat({ onAssistantMessage }: UseChatOptions = {}) {
         },
         body: JSON.stringify({
           messages: messageHistory,
+          ...(clientTimeZone ? { timeZone: clientTimeZone } : {}),
           ...(conversationIdRef.current && !startNew ? { conversationId: conversationIdRef.current } : {}),
           ...(startNew ? { startNewConversation: true } : {}),
         }),
