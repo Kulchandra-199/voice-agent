@@ -46,10 +46,14 @@ export function computeFreeSlots(
   );
 
   // Build busy intervals in minutes-from-midnight
-  const busy: BusyInterval[] = sorted.map((e) => ({
-    start: toMinutes(new Date(e.start.dateTime)),
-    end: toMinutes(new Date(e.end.dateTime)),
-  }));
+  const busy: BusyInterval[] = sorted.map((e) => {
+    const startDate = e.start.dateTime || e.start.date;
+    const endDate = e.end.dateTime || e.end.date;
+    return {
+      start: toMinutes(new Date(startDate)),
+      end: toMinutes(new Date(endDate)),
+    };
+  });
 
   // Apply hard deadline
   const deadlineMinutes = hardDeadline

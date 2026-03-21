@@ -133,7 +133,6 @@ function ChatInterface() {
   const { isSpeechDetected, start: startVAD, stop: stopVAD } = useVAD({
     onSpeechStart: () => {
       if (!isSpeaking) return;
-      console.log('[VAD] Speech detected — interrupting TTS');
       stopSpeakingRef.current?.();
       abort();
       stopVAD();
@@ -147,7 +146,6 @@ function ChatInterface() {
 
   // What to do when user clicks orb while TTS is playing — stop TTS and start listening
   const handleOrbClickWhileSpeaking = useCallback(() => {
-    console.log('[Orb] Clicked while speaking — interrupting and starting listening');
     stopSpeakingRef.current?.();
     abort();
     startListening();
@@ -165,7 +163,6 @@ function ChatInterface() {
   }, [isListening, isSpeaking, stopListening, startListening, handleOrbClickWhileSpeaking]);
 
   async function handleTranscript(text: string) {
-    console.log('[Page] handleTranscript:', text);
     if (!showChat) setShowChat(true);
     stopSpeakingRef.current?.();
     abort();

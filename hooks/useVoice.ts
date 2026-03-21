@@ -14,9 +14,19 @@ export function useVoice({ onTranscript }: UseVoiceOptions) {
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const chunksRef = useRef<Blob[]>([]);
 
-  const transcribeWithGroq = useCallback(async (audioBlob: Blob, mimeType: string): Promise<string> => {
-    console.log('[STT] Transcribing via backend proxy...');
+  function blobToBase64(blob: Blob): Promise<string> {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        const base64 = (reader.result as string).split(',')[1];
+        resolve(base64);
+      };
+      reader.onerror = reject;
+      reader.readAsDataURL(blob);
+    });
+  }
 
+  const transcribeWithGroq = useCallback(async (audioBlob: Blob, mimeType: string): Promise<string> => {
     const base64 = await blobToBase64(audioBlob);
 
     const res = await fetch(`${process.env.NEXT_PUBLIC_BACKEND_URL}/api/stt`, {
@@ -30,24 +40,10 @@ export function useVoice({ onTranscript }: UseVoiceOptions) {
     }
 
     const data = await res.json();
-    console.log('[STT] Backend transcription result:', data.text);
     return data.text ?? '';
   }, []);
 
-  function blobToBase64(blob: Blob): Promise<string> {
-    return new Promise((resolve, reject) => {
-      const reader = new FileReader();
-      reader.onloadend = () => {
-        const base64 = (reader.result as string).split(',')[1];
-        resolve(base64);
-      };
-      reader.onerror = reject;
-      reader.readAsDataURL(blob);
-    });
-  }
-
   const startListening = useCallback(async () => {
-    console.log('[STT] Starting Groq Whisper recording...');
     setError(null);
     setStatus('Recording...');
     try {
@@ -59,7 +55,6 @@ export function useVoice({ onTranscript }: UseVoiceOptions) {
         : MediaRecorder.isTypeSupported('audio/mp4')
         ? 'audio/mp4'
         : 'audio/ogg';
-      console.log('[STT] Using mimeType:', mimeType);
       const recorder = new MediaRecorder(stream, { mimeType });
       chunksRef.current = [];
 
@@ -70,7 +65,6 @@ export function useVoice({ onTranscript }: UseVoiceOptions) {
       };
 
       recorder.onstop = async () => {
-        console.log('[STT] Recording stopped, transcribing...');
         setStatus('Transcribing...');
         const blob = new Blob(chunksRef.current, { type: mimeType });
         try {
@@ -97,7 +91,6 @@ export function useVoice({ onTranscript }: UseVoiceOptions) {
   }, [onTranscript, transcribeWithGroq]);
 
   const stopListening = useCallback(() => {
-    console.log('[STT] Stopping Groq recording');
     if (mediaRecorderRef.current) {
       mediaRecorderRef.current.stop();
     }
