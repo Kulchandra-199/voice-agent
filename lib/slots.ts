@@ -29,6 +29,11 @@ function minutesToTime(minutes: number): string {
   return `${h12}:${m.toString().padStart(2, '0')} ${ampm}`;
 }
 
+function eventStartMs(e: CalendarEvent): number {
+  const raw = e.start.dateTime ?? e.start.date;
+  return raw ? new Date(raw).getTime() : 0;
+}
+
 export function computeFreeSlots(
   events: CalendarEvent[],
   durationMinutes: number,
@@ -40,19 +45,19 @@ export function computeFreeSlots(
   const slots: SlotMinutes[] = [];
 
   // Sort events by start time
-  const sorted = [...events].sort(
-    (a, b) =>
-      new Date(a.start.dateTime).getTime() - new Date(b.start.dateTime).getTime()
-  );
+  const sorted = [...events].sort((a, b) => eventStartMs(a) - eventStartMs(b));
 
   // Build busy intervals in minutes-from-midnight
-  const busy: BusyInterval[] = sorted.map((e) => {
-    const startDate = e.start.dateTime || e.start.date;
-    const endDate = e.end.dateTime || e.end.date;
-    return {
-      start: toMinutes(new Date(startDate)),
-      end: toMinutes(new Date(endDate)),
-    };
+  const busy: BusyInterval[] = sorted.flatMap((e) => {
+    const startDate = e.start.dateTime ?? e.start.date;
+    const endDate = e.end.dateTime ?? e.end.date;
+    if (!startDate || !endDate) return [];
+    return [
+      {
+        start: toMinutes(new Date(startDate)),
+        end: toMinutes(new Date(endDate)),
+      },
+    ];
   });
 
   // Apply hard deadline

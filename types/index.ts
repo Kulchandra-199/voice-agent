@@ -34,14 +34,17 @@ export interface FreeSlot {
   endMinutes: number;
 }
 
+/** Matches Google Calendar EventDateTime (timed or all-day). */
 export interface CalendarEvent {
   summary?: string;
   start: {
-    dateTime: string;
+    dateTime?: string;
+    date?: string;
     timeZone?: string;
   };
   end: {
-    dateTime: string;
+    dateTime?: string;
+    date?: string;
     timeZone?: string;
   };
   description?: string;
