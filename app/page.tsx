@@ -8,7 +8,6 @@ import { ChatBubble } from '@/components/ChatBubble';
 import { TypingIndicator } from '@/components/TypingIndicator';
 import { useVoice } from '@/hooks/useVoice';
 import { useChat } from '@/hooks/useChat';
-import { useVAD } from '@/hooks/useVAD';
 import { TTSProviderInner, useTTS } from '@/components/TTSProviderInner';
 
 function getStoredUser() {
@@ -41,8 +40,9 @@ function ChatInterface() {
   // Refs for chat pipeline
   const messagesRef = useRef<ChatMessage[]>([]);
   const setMessagesRef = useRef<((updater: React.SetStateAction<ChatMessage[]>) => void) | null>(null);
-  const isVADRunningRef = useRef(false);
+  const isSpeakingForVadRef = useRef(false);
   const speakRef = useRef<((text: string) => Promise<void>) | null>(null);
+  const speakStreamRef = useRef<((chunks: AsyncIterable<string>) => Promise<void>) | null>(null);
 
   useEffect(() => {
     const checkAuth = async () => {
@@ -112,55 +112,66 @@ function ChatInterface() {
     }
   }, []);
 
-  const { isSpeaking, speak, stopSpeaking, voices, selectedVoice, setVoice } = useTTS();
+  const { isSpeaking, speak, speakStream, stopSpeaking, voices, selectedVoice, setVoice } = useTTS();
+
+  useEffect(() => {
+    isSpeakingForVadRef.current = isSpeaking;
+  }, [isSpeaking]);
 
   // Stable ref for stopSpeaking used in VAD callback
   const stopSpeakingRef = useRef<(() => void) | null>(null);
   stopSpeakingRef.current = stopSpeaking;
   speakRef.current = speak;
+  speakStreamRef.current = speakStream;
 
-  // useChat — must be before handleTranscript and useVAD callbacks that use abort/sendMessage
+  // useChat — must be before handleTranscript and voice callbacks that use abort/sendMessage
   const { messages, setMessages, isLoading, sendMessage, clearMessages, abort } = useChat({
     onAssistantMessage: (reply) => {
       if (reply?.trim()) {
         speakRef.current?.(reply);
       }
-    }
+    },
+    onAssistantTokenStream: (tokens) => speakStreamRef.current?.(tokens) ?? Promise.resolve(),
   });
   setMessagesRef.current = setMessages;
 
-  // VAD — uses abort() from useChat above
-  const { isSpeechDetected, start: startVAD, stop: stopVAD } = useVAD({
-    onSpeechStart: () => {
-      if (!isSpeaking) return;
+  // useVoice — VAD-driven segments on one mic stream; barge-in while TTS via isSpeaking ref
+  const {
+    isSessionActive,
+    isCapturingSpeech,
+    isProcessing,
+    status,
+    error,
+    startSession,
+    stopSession,
+    clearError,
+  } = useVoice({
+    onTranscript: handleTranscript,
+    isSpeakingRef: isSpeakingForVadRef,
+    onBargeIn: () => {
       stopSpeakingRef.current?.();
       abort();
-      stopVAD();
     },
   });
 
-  // useVoice — uses handleTranscript below, but start/stop are passed as callbacks
-  const { isListening, isProcessing, status, error, startListening, stopListening, clearError } = useVoice({
-    onTranscript: handleTranscript,
-  });
-
-  // What to do when user clicks orb while TTS is playing — stop TTS and start listening
+  // Orb while TTS is playing — stop playback and open mic (VAD session)
   const handleOrbClickWhileSpeaking = useCallback(() => {
     stopSpeakingRef.current?.();
     abort();
-    startListening();
-  }, [abort]);
-
-  // Orb click handler — decides based on current state
-  const handleVoiceOrbClick = useCallback(() => {
-    if (isListening) {
-      stopListening();
-    } else if (isSpeaking) {
-      handleOrbClickWhileSpeaking();
-    } else {
-      startListening();
+    if (!isSessionActive) {
+      void startSession();
     }
-  }, [isListening, isSpeaking, stopListening, startListening, handleOrbClickWhileSpeaking]);
+  }, [abort, startSession, isSessionActive]);
+
+  const handleVoiceOrbClick = useCallback(() => {
+    if (isSpeaking) {
+      handleOrbClickWhileSpeaking();
+    } else if (isSessionActive) {
+      stopSession();
+    } else {
+      void startSession();
+    }
+  }, [isSpeaking, isSessionActive, handleOrbClickWhileSpeaking, stopSession, startSession]);
 
   async function handleTranscript(text: string) {
     if (!showChat) setShowChat(true);
@@ -412,10 +423,10 @@ function ChatInterface() {
             ) : (
               <div className="voice-orb-wrapper">
                 <VoiceOrb
-                  isListening={isListening}
+                  isVoiceSessionActive={isSessionActive}
+                  isCapturingSpeech={isCapturingSpeech}
                   isSpeaking={isSpeaking}
-                  onStartListening={startListening}
-                  onStopListening={handleVoiceOrbClick}
+                  onClick={handleVoiceOrbClick}
                 />
               </div>
             )}
@@ -425,14 +436,14 @@ function ChatInterface() {
           <div className="status-area">
             <span className="status-text">
               {isProcessing
-                ? 'Processing...'
-                : isListening
-                ? status
-                : isSpeaking
-                ? 'Speaking...'
-                : inputMode === 'voice'
-                ? 'Tap the orb to speak'
-                : 'Press enter to send'}
+                ? 'Transcribing...'
+                : isSessionActive
+                  ? status
+                  : isSpeaking
+                    ? 'Speaking...'
+                    : inputMode === 'voice'
+                      ? 'Tap the orb — then just talk; tap again to mute'
+                      : 'Press enter to send'}
             </span>
           </div>
         </div>

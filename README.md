@@ -1,33 +1,32 @@
+# Voice Agent — Voice-Powered Scheduling Assistant
 
-# Voice Agent - Voice-Powered Scheduling Assistant
-
-A voice-enabled AI assistant that interacts with users via speech and manages their Google Calendar. Built with Next.js, it connects to a backend scheduler service for calendar operations and LLM-powered conversations.
+Next.js frontend for **Aria**, a voice-first scheduling assistant. The UI talks to the Express backend for auth, Google Calendar (via tools), **Groq** LLM/STT/TTS, and conversation storage.
 
 ## Features
 
-- **Voice Interaction** - Speak naturally to schedule meetings and manage calendar
-- **Text Input** - Alternative text-based interface for all commands
-- **Google Calendar Integration** - View, create, and cancel meetings
-- **AI-Powered** - Natural language understanding via Ollama LLM
-- **Google Meet Links** - Automatic meeting link generation for events
+- **Voice (VAD)** — Tap the orb to open a mic session; **voice activity detection** starts and stops recording per utterance (silence ends a turn). Optional **barge-in** while the assistant is speaking (stops TTS when you talk).
+- **Streaming replies** — Chat uses **SSE** from `/api/chat` (`stream: true`); tokens feed **TTS** in sentence-sized chunks for lower perceived latency.
+- **Text input** — Same assistant over a text field when you switch input mode.
+- **Google Calendar** — Connect Google OAuth on the backend; the model uses calendar tools for availability and booking.
 
-## Tech Stack
+## Tech stack
 
-- **Framework**: Next.js 14 (App Router)
-- **Language**: TypeScript
-- **State Management**: Zustand
-- **Styling**: CSS-in-JS (styled-jsx)
-- **LLM**: Ollama Cloud API
-- **Backend**: Scheduler Backend API
+- **Framework:** Next.js 14 (App Router)
+- **Language:** TypeScript
+- **Styling:** styled-jsx (component-scoped CSS)
+- **Voice pipeline:** `useVoice.ts` (VAD + `MediaRecorder` + STT proxy), `TTSProviderInner.tsx` (chunked TTS + playback queue)
+- **Chat:** `useChat.ts` (SSE parser, assistant streaming UI)
 
-## Getting Started
+> `zustand` and `lib/ollama.ts` are present in the repo but the main app flow uses the **backend** for LLM/STT/TTS, not direct Ollama calls from the browser.
+
+## Getting started
 
 ### Prerequisites
 
 - Node.js 18+
-- npm or yarn
+- Running backend (see `../google_calendar/README.md`)
 
-### Installation
+### Install
 
 ```bash
 npm install
@@ -35,17 +34,14 @@ npm install
 
 ### Configuration
 
-Create a `.env.local` file in the root directory:
+Create `.env.local` in `frontend/`:
 
 ```env
-# Backend API URL
+# Required — same origin as your Express API (include port)
 NEXT_PUBLIC_BACKEND_URL=http://localhost:8080
-CALENDAR_API_URL=http://localhost:8080
 
-# Ollama Cloud (optional - for local development)
-OLLAMA_BASE_URL=https://ollama.com
-OLLAMA_MODEL=glm-5
-OLLAMA_CLOUD_API_KEY=your_api_key
+# Optional — only if you use frontend/lib/calendar.ts against the API directly
+# CALENDAR_API_URL=http://localhost:8080
 ```
 
 ### Development
@@ -54,45 +50,41 @@ OLLAMA_CLOUD_API_KEY=your_api_key
 npm run dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) to start.
+Open [http://localhost:3000](http://localhost:3000).
 
 ### Build
 
 ```bash
 npm run build
+npm start
 ```
 
-## Project Structure
+## Project structure
 
 ```
 frontend/
-├── app/                    # Next.js App Router pages
-│   ├── page.tsx           # Main chat interface
-│   └── login/page.tsx     # Login page
-├── components/            # React components
-│   ├── VoiceOrb.tsx       # Voice input orb
-│   ├── ChatBubble.tsx     # Chat message bubbles
-│   └── TTSProvider.tsx    # Text-to-Speech
-├── hooks/                  # Custom React hooks
-│   ├── useVoice.ts        # Voice recognition
-│   └── useChat.ts         # Chat functionality
-└── lib/                    # Utility functions
-    ├── calendar.ts        # Calendar API client
-    ├── ollama.ts          # LLM API client
-    └── tokens.ts          # OAuth token management
+├── app/
+│   ├── page.tsx           # Main chat + voice orb
+│   └── login/page.tsx
+├── components/
+│   ├── VoiceOrb.tsx       # Mic session UI (tap to arm / mute)
+│   ├── TTSProviderInner.tsx
+│   ├── TTSProvider.tsx
+│   └── ChatBubble.tsx
+├── hooks/
+│   ├── useVoice.ts        # VAD + recording + STT (primary voice logic)
+│   ├── useVAD.ts          # Standalone RMS-based VAD (not wired from page)
+│   └── useChat.ts         # Chat + SSE streaming
+└── lib/                   # Helpers (calendar client, parsers, etc.)
 ```
 
-## Environment Variables
+## Environment variables
 
 | Variable | Description | Required |
 |----------|-------------|----------|
-| `NEXT_PUBLIC_BACKEND_URL` | Backend API URL | Yes |
-| `CALENDAR_API_URL` | Calendar API URL | Yes |
-| `OLLAMA_BASE_URL` | Ollama API base URL | Yes |
-| `OLLAMA_MODEL` | Ollama model name | Yes |
-| `OLLAMA_CLOUD_API_KEY` | Ollama Cloud API key | Yes |
+| `NEXT_PUBLIC_BACKEND_URL` | Base URL of the Express backend | Yes |
+| `CALENDAR_API_URL` | Override for `lib/calendar.ts` only | No |
 
 ## License
 
 MIT
->>>>>>> d6e9f71 (Add README documentation)

@@ -1,29 +1,31 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 
 interface VoiceOrbProps {
-  isListening: boolean;
+  /** Mic on: VAD is running; speak to capture. */
+  isVoiceSessionActive: boolean;
+  /** VAD detected speech — recording a segment. */
+  isCapturingSpeech: boolean;
   isSpeaking: boolean;
-  onStartListening: () => void;
-  onStopListening: () => void;
+  onClick: () => void;
 }
 
 export function VoiceOrb({
-  isListening,
+  isVoiceSessionActive,
+  isCapturingSpeech,
   isSpeaking,
-  onStartListening,
-  onStopListening,
+  onClick,
 }: VoiceOrbProps) {
   const [isHovered, setIsHovered] = useState(false);
 
-  const handleClick = () => {
-    if (isListening) {
-      onStopListening();
-    } else {
-      onStartListening();
-    }
-  };
+  const label = isSpeaking
+    ? 'Tap to interrupt'
+    : isVoiceSessionActive
+      ? isCapturingSpeech
+        ? 'Recording — tap to stop listening'
+        : 'Listening for speech — tap to stop'
+      : 'Tap to start voice listening';
 
   return (
     <div
@@ -31,22 +33,21 @@ export function VoiceOrb({
       onMouseEnter={() => setIsHovered(true)}
       onMouseLeave={() => setIsHovered(false)}
     >
-      {/* Pulse rings when listening */}
-      {isListening && (
+      {isVoiceSessionActive && (
         <>
-          <div className="pulse-ring ring-1" />
-          <div className="pulse-ring ring-2" />
-          <div className="pulse-ring ring-3" />
+          <div className={`pulse-ring ring-1 ${isCapturingSpeech ? '' : 'subtle'}`} />
+          <div className={`pulse-ring ring-2 ${isCapturingSpeech ? '' : 'subtle'}`} />
+          <div className={`pulse-ring ring-3 ${isCapturingSpeech ? '' : 'subtle'}`} />
         </>
       )}
 
-      {/* Glow effect when speaking */}
       {(isSpeaking || isHovered) && <div className="glow-layer" />}
 
       <button
-        className={`voice-orb ${isListening ? 'listening' : ''} ${isSpeaking ? 'speaking' : ''}`}
-        onClick={handleClick}
-        aria-label={isListening ? 'Stop recording' : 'Start recording'}
+        type="button"
+        className={`voice-orb ${isVoiceSessionActive ? 'listening' : ''} ${isCapturingSpeech ? 'capturing' : ''} ${isSpeaking ? 'speaking' : ''}`}
+        onClick={onClick}
+        aria-label={label}
       >
         <svg
           viewBox="0 0 24 24"
@@ -57,11 +58,9 @@ export function VoiceOrb({
           strokeLinejoin="round"
           className="mic-icon"
         >
-          {isListening ? (
-            // Stop icon
+          {isVoiceSessionActive ? (
             <rect x="6" y="6" width="12" height="12" rx="2" />
           ) : (
-            // Mic icon
             <>
               <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z" />
               <path d="M19 10v2a7 7 0 0 1-14 0v-2" />
@@ -101,9 +100,15 @@ export function VoiceOrb({
         }
 
         .voice-orb.listening {
-          background: linear-gradient(145deg, #2a1a4e, #1a1a2e);
+          background: linear-gradient(145deg, #252040, #1a1a2e);
           border-color: #6366f1;
-          box-shadow: 0 0 30px rgba(99, 102, 241, 0.4);
+          box-shadow: 0 0 24px rgba(99, 102, 241, 0.25);
+        }
+
+        .voice-orb.capturing {
+          background: linear-gradient(145deg, #2a1a4e, #1a1a2e);
+          border-color: #818cf8;
+          box-shadow: 0 0 30px rgba(99, 102, 241, 0.45);
         }
 
         .voice-orb.speaking {
@@ -128,7 +133,11 @@ export function VoiceOrb({
         }
 
         .voice-orb.listening .mic-icon {
-          color: #6366f1;
+          color: #a5b4fc;
+        }
+
+        .voice-orb.capturing .mic-icon {
+          color: #c7d2fe;
         }
 
         .voice-orb.speaking .mic-icon {
@@ -144,9 +153,20 @@ export function VoiceOrb({
           animation: pulse 2s ease-out infinite;
         }
 
-        .ring-1 { animation-delay: 0s; }
-        .ring-2 { animation-delay: 0.5s; }
-        .ring-3 { animation-delay: 1s; }
+        .pulse-ring.subtle {
+          opacity: 0.35;
+          animation: pulseSoft 2.5s ease-out infinite;
+        }
+
+        .ring-1 {
+          animation-delay: 0s;
+        }
+        .ring-2 {
+          animation-delay: 0.5s;
+        }
+        .ring-3 {
+          animation-delay: 1s;
+        }
 
         @keyframes pulse {
           0% {
@@ -155,6 +175,17 @@ export function VoiceOrb({
           }
           100% {
             transform: scale(2);
+            opacity: 0;
+          }
+        }
+
+        @keyframes pulseSoft {
+          0% {
+            transform: scale(1);
+            opacity: 0.35;
+          }
+          100% {
+            transform: scale(1.65);
             opacity: 0;
           }
         }

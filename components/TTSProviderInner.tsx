@@ -31,6 +31,65 @@ const GROQ_TTS_VOICES = [
   { name: 'troy', lang: 'en' },
 ];
 
+/** Pull stable speech-sized phrases from a growing buffer (sentence-first, then comma pauses, then max length). */
+const SEM_MIN = 10;
+const SEM_COMMA_MIN_BEFORE = 28;
+const SEM_MAX = 200;
+
+function extractSemanticChunks(buffer: string): { chunks: string[]; rest: string } {
+  const chunks: string[] = [];
+  let rest = buffer;
+  while (rest.length > 0) {
+    const trimmed = rest.trimStart();
+    if (!trimmed) {
+      rest = '';
+      break;
+    }
+    const leadWs = rest.length - trimmed.length;
+
+    const sentence = trimmed.match(/^([\s\S]{3,}?[.!?])(\s+|$)/);
+    if (sentence) {
+      const raw = sentence[1].trim();
+      if (raw.length >= 3) {
+        chunks.push(raw);
+        rest = rest.slice(leadWs + sentence[1].length).replace(/^\s+/, '');
+        continue;
+      }
+    }
+
+    if (trimmed.length >= SEM_COMMA_MIN_BEFORE) {
+      const commaAt = trimmed.indexOf(',');
+      if (commaAt >= SEM_COMMA_MIN_BEFORE - 1 && commaAt < trimmed.length - 1) {
+        const after = trimmed[commaAt + 1];
+        if (after === ' ' || after === '\n') {
+          const piece = trimmed.slice(0, commaAt + 1).trim();
+          if (piece.length >= SEM_MIN) {
+            chunks.push(piece);
+            rest = rest.slice(leadWs + commaAt + 1).replace(/^\s+/, '');
+            continue;
+          }
+        }
+      }
+    }
+
+    if (trimmed.length >= SEM_MAX) {
+      const slice = trimmed.slice(0, SEM_MAX);
+      const lastSpace = slice.lastIndexOf(' ');
+      if (lastSpace >= SEM_MIN) {
+        chunks.push(trimmed.slice(0, lastSpace).trim());
+        rest = rest.slice(leadWs + lastSpace).replace(/^\s+/, '');
+        continue;
+      }
+      chunks.push(trimmed.slice(0, SEM_MAX).trim());
+      rest = rest.slice(leadWs + SEM_MAX).replace(/^\s+/, '');
+      continue;
+    }
+
+    break;
+  }
+  return { chunks, rest };
+}
+
 export function TTSProviderInner({ children }: { children: ReactNode }) {
   const [isSpeaking, setIsSpeaking] = useState(false);
   const [currentVoiceName, setCurrentVoiceName] = useState<string>('autumn');
@@ -43,6 +102,9 @@ export function TTSProviderInner({ children }: { children: ReactNode }) {
   const textBufferRef = useRef('');
   const chunksQueueRef = useRef<AudioBuffer[]>([]);
   const isPlayingRef = useRef(false);
+  const ttsTextQueueRef = useRef<string[]>([]);
+  const ttsSynthInFlightRef = useRef(0);
+  const TTS_SYNTH_PARALLEL = 2;
 
   const setVoice = useCallback((voiceName: string) => {
     const validVoices = GROQ_TTS_VOICES.map(v => v.name);
@@ -143,6 +205,8 @@ export function TTSProviderInner({ children }: { children: ReactNode }) {
     stopFlagRef.current = true;
     pendingFetchesRef.current.forEach(c => c.abort());
     pendingFetchesRef.current = [];
+    ttsTextQueueRef.current = [];
+    ttsSynthInFlightRef.current = 0;
     chunksQueueRef.current = [];
     isPlayingRef.current = false;
     if (audioRef.current) {
@@ -207,6 +271,8 @@ export function TTSProviderInner({ children }: { children: ReactNode }) {
     stopFlagRef.current = false;
     textBufferRef.current = '';
     chunksQueueRef.current = [];
+    ttsTextQueueRef.current = [];
+    ttsSynthInFlightRef.current = 0;
     isPlayingRef.current = false;
 
     const ctx = new AudioContext();
@@ -216,31 +282,67 @@ export function TTSProviderInner({ children }: { children: ReactNode }) {
       await ctx.resume();
     }
 
+    const voice = currentVoiceName;
+
+    const pumpSynth = () => {
+      while (
+        !stopFlagRef.current &&
+        ttsSynthInFlightRef.current < TTS_SYNTH_PARALLEL &&
+        ttsTextQueueRef.current.length > 0
+      ) {
+        const phrase = ttsTextQueueRef.current.shift();
+        if (!phrase?.trim()) continue;
+        ttsSynthInFlightRef.current += 1;
+        void fetchAudioChunk(phrase.trim(), voice).then((buf) => {
+          ttsSynthInFlightRef.current -= 1;
+          if (!stopFlagRef.current && buf) {
+            queueChunk(buf);
+          }
+          pumpSynth();
+        });
+      }
+    };
+
+    const enqueueTtsPhrase = (phrase: string) => {
+      const t = phrase.trim();
+      if (!t) return;
+      ttsTextQueueRef.current.push(t);
+      pumpSynth();
+    };
+
     for await (const text of chunks) {
       if (stopFlagRef.current) break;
       textBufferRef.current += text;
-
-      const shouldFlush =
-        /[.!?]\s*$/.test(textBufferRef.current) ||
-        textBufferRef.current.split(/\s+/).length >= 3;
-
-      if (shouldFlush && textBufferRef.current.trim()) {
-        const chunkText = textBufferRef.current.trim();
-        textBufferRef.current = '';
-        const buf = await fetchAudioChunk(chunkText, currentVoiceName);
+      const { chunks: ready, rest } = extractSemanticChunks(textBufferRef.current);
+      textBufferRef.current = rest;
+      for (const phrase of ready) {
         if (stopFlagRef.current) break;
-        if (!buf) break;
-        queueChunk(buf);
+        enqueueTtsPhrase(phrase);
       }
     }
 
     if (!stopFlagRef.current && textBufferRef.current.trim()) {
-      const chunkText = textBufferRef.current.trim();
+      enqueueTtsPhrase(textBufferRef.current.trim());
       textBufferRef.current = '';
-      const buf = await fetchAudioChunk(chunkText, currentVoiceName);
-      if (stopFlagRef.current) return;
-      if (buf) queueChunk(buf);
     }
+
+    const waitForSynthDrain = () =>
+      new Promise<void>((resolve) => {
+        const tick = () => {
+          if (stopFlagRef.current) {
+            resolve();
+            return;
+          }
+          if (ttsSynthInFlightRef.current === 0 && ttsTextQueueRef.current.length === 0) {
+            resolve();
+            return;
+          }
+          requestAnimationFrame(tick);
+        };
+        tick();
+      });
+
+    await waitForSynthDrain();
   }, [currentVoiceName, stopSpeaking]);
 
   return (
