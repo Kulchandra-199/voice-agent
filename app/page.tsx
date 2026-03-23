@@ -46,29 +46,42 @@ function ChatInterface() {
 
   useEffect(() => {
     const checkAuth = async () => {
-      const user = getStoredUser();
-      if (user) {
-        try {
+      try {
+        const user = getStoredUser();
+        if (user) {
           setIsLoggedIn(true);
           setUserEmail(user.email || user.username);
 
           const token = user.token ?? null;
           const headers: Record<string, string> = token ? { Authorization: `Bearer ${token}` } : {};
+          const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:8080';
 
           try {
-            const res = await fetch(`${process.env.NEXT_PUBLIC_BACKEND_URL}/auth/status`, { headers });
-            const data = await res.json();
-            if (data.connected || data.hasGoogleCalendar) {
-              setCalendarConnected(true);
+            const controller = new AbortController();
+            const id = setTimeout(() => controller.abort(), 8000); // 8s timeout for auth check
+
+            const res = await fetch(`${backendUrl}/auth/status`, { 
+              headers,
+              signal: controller.signal
+            });
+            clearTimeout(id);
+            
+            if (res.ok) {
+              const data = await res.json();
+              if (data.connected || data.hasGoogleCalendar) {
+                setCalendarConnected(true);
+              }
             }
           } catch (err) {
             console.error('Failed to check calendar status:', err);
           }
-        } catch (e) {
-          localStorage.removeItem('user');
         }
+      } catch (e) {
+        console.error('Auth check error:', e);
+        try { localStorage.removeItem('user'); } catch {}
+      } finally {
+        setLoading(false);
       }
-      setLoading(false);
     };
 
     checkAuth();

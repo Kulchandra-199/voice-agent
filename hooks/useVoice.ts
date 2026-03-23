@@ -65,8 +65,9 @@ export function useVoice({
 
   const transcribeWithGroq = useCallback(async (audioBlob: Blob, mimeType: string): Promise<string> => {
     const base64 = await blobToBase64(audioBlob);
+    const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:8080';
 
-    const res = await fetch(`${process.env.NEXT_PUBLIC_BACKEND_URL}/api/stt`, {
+    const res = await fetch(`${backendUrl}/api/stt`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ audio: base64, language: 'en', mimeType }),

@@ -93,7 +93,8 @@ export function useChat({ onAssistantMessage, onAssistantTokenStream }: UseChatO
       const startNew = startNewConversationNextRef.current;
       const clientTimeZone =
         typeof Intl !== 'undefined' ? Intl.DateTimeFormat().resolvedOptions().timeZone : undefined;
-      const response = await fetch(`${process.env.NEXT_PUBLIC_BACKEND_URL}/api/chat`, {
+      const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:8080';
+      const response = await fetch(`${backendUrl}/api/chat`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

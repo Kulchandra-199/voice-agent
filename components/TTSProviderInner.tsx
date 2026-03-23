@@ -164,8 +164,9 @@ export function TTSProviderInner({ children }: { children: ReactNode }) {
 
     try {
       let response;
+      const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:8080';
       try {
-        response = await fetch(`${process.env.NEXT_PUBLIC_BACKEND_URL}/api/tts`, {
+        response = await fetch(`${backendUrl}/api/tts`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ text, voice }),
@@ -229,7 +230,8 @@ export function TTSProviderInner({ children }: { children: ReactNode }) {
     stopFlagRef.current = false;
 
     try {
-      const response = await fetch(`${process.env.NEXT_PUBLIC_BACKEND_URL}/api/tts`, {
+      const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:8080';
+      const response = await fetch(`${backendUrl}/api/tts`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ text, voice: currentVoiceName }),
